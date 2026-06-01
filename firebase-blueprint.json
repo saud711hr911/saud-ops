@@ -1,0 +1,215 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Represents a user in the system with their assigned operations role.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "The unique Firebase Authentication UID of the user."
+        },
+        "name": {
+          "type": "string",
+          "description": "The user's display name."
+        },
+        "email": {
+          "type": "string",
+          "description": "The user's email address."
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin", "employee", "client"],
+          "description": "The operational role of the user."
+        },
+        "company": {
+          "type": "string",
+          "description": "Company name for clients."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the profile was created."
+        }
+      },
+      "required": ["userId", "name", "email", "role", "createdAt"]
+    },
+    "Request": {
+      "title": "Request",
+      "description": "A support, maintenance, or operation request filed by a client.",
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "description": "The unique identifier of the request."
+        },
+        "title": {
+          "type": "string",
+          "description": "The title or subject of the request."
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed details of the request."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["New", "In Progress", "Waiting for Client", "Completed", "Closed"],
+          "description": "The current workflow status of the request."
+        },
+        "clientId": {
+          "type": "string",
+          "description": "ID of the client who created the request."
+        },
+        "clientName": {
+          "type": "string",
+          "description": "Name of the client."
+        },
+        "assignedEmployeeId": {
+          "type": "string",
+          "description": "ID of the employee assigned to the request, or empty if unassigned."
+        },
+        "assignedEmployeeName": {
+          "type": "string",
+          "description": "Name of the assigned employee."
+        },
+        "attachments": {
+          "type": "array",
+          "description": "List of files attached to this request. Real files use storage, simulated ones are persisted as Data URLs."
+        },
+        "urgency": {
+          "type": "string",
+          "enum": ["Low", "Medium", "High"],
+          "description": "Priority level of the request."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["requestId", "title", "description", "status", "clientId", "clientName", "urgency", "createdAt", "updatedAt"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "A reply or clarification note posted under a specific request.",
+      "type": "object",
+      "properties": {
+        "commentId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "authorId": {
+          "type": "string"
+        },
+        "authorName": {
+          "type": "string"
+        },
+        "authorRole": {
+          "type": "string",
+          "enum": ["admin", "employee", "client"]
+        },
+        "content": {
+          "type": "string"
+        },
+        "attachments": {
+          "type": "array"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["commentId", "requestId", "authorId", "authorName", "authorRole", "content", "createdAt"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "A specific checklist item or action item for a request.",
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "assignedToId": {
+          "type": "string"
+        },
+        "assignedToName": {
+          "type": "string"
+        },
+        "dueDate": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["Pending", "Completed"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["taskId", "requestId", "title", "status", "createdAt"]
+    },
+    "RequestTemplate": {
+      "title": "RequestTemplate",
+      "description": "Predefined workflow templates for standard operations.",
+      "type": "object",
+      "properties": {
+        "templateId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "steps": {
+          "type": "array"
+        },
+        "requiredDocs": {
+          "type": "array"
+        },
+        "defaultMessages": {
+          "type": "array"
+        }
+      },
+      "required": ["templateId", "name", "description"]
+    }
+  },
+  "firestore": {
+    "/requestTemplates/{templateId}": {
+      "schema": "RequestTemplate",
+      "description": "Predefined template library for workflows."
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile records indexed by auth user ID."
+    },
+    "/requests/{requestId}": {
+      "schema": "Request",
+      "description": "Root collection storing operational work requests."
+    },
+    "/requests/{requestId}/comments/{commentId}": {
+      "schema": "Comment",
+      "description": "Sub-collection of comments specific to a single request."
+    },
+    "/requests/{requestId}/tasks/{taskId}": {
+      "schema": "Task",
+      "description": "Sub-collection of micro-tasks specific to a single request."
+    }
+  }
+}

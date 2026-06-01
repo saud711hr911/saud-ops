@@ -1,0 +1,6 @@
+{
+  "name": "Operations Center",
+  "description": "A collaborative portal for clients, employees, and administrators to manage operations, requests, task assignments, and internal comments with Arabic RTL support.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
