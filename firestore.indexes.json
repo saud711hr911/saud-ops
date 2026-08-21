@@ -1,0 +1,71 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "regulatory_updates",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "effectiveDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "regulatory_impacts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "state", "order": "ASCENDING" },
+        { "fieldPath": "effectiveDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "regulatory_impacts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "clientId", "order": "ASCENDING" },
+        { "fieldPath": "state", "order": "ASCENDING" },
+        { "fieldPath": "effectiveDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "regulatory_impacts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "updateId", "order": "ASCENDING" },
+        { "fieldPath": "applicable", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "regulatory_impacts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "isOverdue", "order": "ASCENDING" },
+        { "fieldPath": "effectiveDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "compliance_alerts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "recipientEmail", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "compliance_steps",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "impactId", "order": "ASCENDING" },
+        { "fieldPath": "stepOrder", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "workforce_snapshots",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "clientId", "order": "ASCENDING" },
+        { "fieldPath": "asOf", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

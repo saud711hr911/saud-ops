@@ -1,8 +1,8 @@
 node_modules/
-build/
-dist/
-coverage/
-.DS_Store
-*.log
+.next/
 .env*
-!.env.example
+firebase-debug.log
+*.local
+
+# typescript build info
+*.tsbuildinfo
