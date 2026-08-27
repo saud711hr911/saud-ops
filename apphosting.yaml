@@ -1,0 +1,16 @@
+runConfig:
+  minInstances: 0
+  maxInstances: 3
+  concurrency: 40
+  cpu: 1
+  memoryMiB: 512
+
+env:
+  - variable: OWNER_EMAIL
+    value: sssaaa2020@hotmail.com
+    availability:
+      - RUNTIME
+  - variable: STORAGE_BUCKET
+    value: saud-ops-masar.firebasestorage.app
+    availability:
+      - RUNTIME
