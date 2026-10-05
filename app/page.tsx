@@ -686,7 +686,7 @@ function ComplianceCenter({ data, saving, selectedUpdateId, onSelectUpdate, onAc
 
   const selectedSteps = selected ? data.complianceSteps.filter((step) => selectedImpacts.some((impact) => impact.id === step.impactId)) : [];
 
-  return <section className="page-section">
+  return <section className="page-section compliance-section">
     <PageHeader
       eyebrow="من الخبر إلى التزام متتبَّع"
       title="الرصد النظامي والامتثال"

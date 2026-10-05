@@ -1,7 +1,7 @@
 # وحدة «الرصد النظامي والامتثال» — نسخة Firebase
 
 **المشروع:** `saud-ops-masar` (App Hosting — europe-west4)
-**الحالة:** المرحلة 1 كاملة — البناء والاختبارات والفحص النوعي كلها خضراء
+**الحالة:** المرحلة 1 كاملة + التنسيق والمجدول اليومي — البناء والاختبارات والفحص النوعي كلها خضراء
 
 ---
 
@@ -164,16 +164,53 @@ firebase deploy --only firestore:indexes
 
 ---
 
-## 7. ما تبقّى
+## 7. ما أُنجز بعد المرحلة 1
 
-- **أصناف CSS الجديدة** في `globals.css`: `detail-column`, `detail-panel`, `detail-header`,
-  `detail-block`, `impact-list`, `impact-row`, `impact-summary`, `impact-mark`, `impact-detail`,
-  `trace-table`, `steps-list`, `rule-list`, `inline-form`, `checkbox-grid`, `form-note`,
-  `muted-note`, `disclaimer-note`, `list-meta`, `detail-actions`, `detail-summary`.
-  الشاشة تعمل بدونها لكنها بلا تنسيق.
+- **تنسيق شاشة «الرصد النظامي»**: كل الأصناف التي كانت ناقصة صارت معرَّفة في
+  `app/globals.css` (قسم «الرصد النظامي والامتثال» في آخر الملف)، مع تجاوب للجوال.
+  قائمة القرارات مقيّدة بالصنف `compliance-section` فلا تمسّ شاشة العملاء.
+- **مجدول حقيقي عند 05:00**: نقطة جديدة `POST /api/cron/compliance-tick` تستدعي
+  `runComplianceTick` نفسها، محمية بسرّ مشترك `CRON_SECRET`. التشغيل عند فتح المالك
+  للنظام باقٍ كما هو، والتشغيلان معًا لا يكرران تنبيهًا ولا خطة.
+
+### تفعيل المجدول (مرة واحدة)
+
+1. أنشئ السرّ في App Hosting (يُحفظ في Cloud Secret Manager):
+
+   ```bash
+   firebase apphosting:secrets:set cron-secret --project saud-ops-masar
+   ```
+
+2. أضف إلى `env` في `apphosting.yaml` ثم أعد النشر:
+
+   ```yaml
+     - variable: CRON_SECRET
+       secret: cron-secret
+       availability:
+         - RUNTIME
+   ```
+
+   > لا تُضِف هذا السطر قبل إنشاء السرّ — النشر يفشل إن كان السرّ غير موجود.
+   > وبدون `CRON_SECRET` تردّ النقطة بـ 503 ولا تفعل شيئًا.
+
+3. أنشئ مهمة Cloud Scheduler (استبدل الرابط برابط App Hosting والسرّ بقيمته):
+
+   ```bash
+   gcloud scheduler jobs create http masar-compliance-tick \
+     --project saud-ops-masar --location europe-west1 \
+     --schedule "0 5 * * *" --time-zone "Asia/Riyadh" \
+     --uri "https://<رابط-App-Hosting>/api/cron/compliance-tick" \
+     --http-method POST \
+     --headers "Authorization=Bearer <قيمة-السرّ>"
+   ```
+
+   للتجربة فورًا: `gcloud scheduler jobs run masar-compliance-tick --location europe-west1`.
+   الرد يحمل ملخص الفحص (`scanned`, `alertsCreated`, `plansCreated`, …) ويظهر أيضًا في سجلات App Hosting.
+
+## 8. ما تبقّى
+
 - **قناة إرسال فعلية** لـ `compliance_alerts` (بريد أو واتساب) — تُخزَّن الآن وتُعرض ولا تُرسَل خارجيًا.
-- **مجدول حقيقي عند 05:00**: Cloud Scheduler + دالة تستدعي `compliance_tick`. الحل الحالي
-  (التشغيل عند فتح التطبيق) يكفي ما دام أحدكم يفتح مَسار يوميًا.
+  تحتاج قرارًا منكم بالمزوّد (WhatsApp Business API، أو SendGrid/Gmail للبريد) وبيانات اعتماده.
 - **قراءة المجموعات كاملة**: `loadAll()` القائم و`listRecords` يقرآن المجموعات بالكامل.
   يعمل جيدًا عند عشرات المنشآت، ويحتاج إعادة نظر عند المئات.
 - **المرحلة 3 (الرصد الآلي)**: محوّلان للبداية مع مراقبة صحة المصدر، واستخلاص مُقيَّد
