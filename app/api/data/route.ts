@@ -1,6 +1,9 @@
 import { adminAuth, adminBucket, createRecord, deleteRecord, deleteReferences, getRecord, listRecords, nowIso, recordReference, updateRecord } from "../../../lib/firebase-admin";
 import { ApiError, AppUserRecord, CurrentUser, ROLES, Role, requireRole, requireUser } from "../../../lib/server-auth";
 import { complianceSnapshot, handleComplianceAction } from "./compliance";
+import { handleMonitoringAction, monitoringSnapshot } from "./monitoring";
+import { isMailConfigured, sendMail } from "../../../lib/mailer";
+import { renderReminderEmail } from "../../../lib/compliance/delivery.ts";
 
 type ClientRecord = {
   id: number; name: string; legalName: string | null; unifiedNumber: string | null; crNumber: string | null;
@@ -168,8 +171,8 @@ async function deleteAuthUser(uid: string | undefined) {
 export async function GET() {
   try {
     const user = await requireUser();
-    const [operational, compliance] = await Promise.all([snapshot(user), complianceSnapshot(user)]);
-    return Response.json({ ...operational, ...compliance });
+    const [operational, compliance, monitoring] = await Promise.all([snapshot(user), complianceSnapshot(user), monitoringSnapshot(user)]);
+    return Response.json({ ...operational, ...compliance, ...monitoring });
   } catch (error) {
     const result = clientError(error);
     return Response.json({ error: result.message, code: result.code }, { status: result.status });
@@ -480,6 +483,26 @@ export async function POST(request: Request) {
       return Response.json({ ok: true });
     }
 
+    if (action === "email_reminder") {
+      requireRole(user, "owner");
+      if (!isMailConfigured()) throw new ApiError("البريد غير مفعّل: أكمل إعدادات SMTP في App Hosting أولًا.", 400, "MAIL_DISABLED");
+      const id = Number(payload.id);
+      const reminder = await getRecord<ReminderRecord>("reminders", id);
+      if (!reminder) throw new ApiError("التنبيه غير موجود.", 404, "NOT_FOUND");
+      const [client, document] = await Promise.all([getRecord<ClientRecord>("clients", reminder.clientId), getRecord<DocumentRecord>("documents", reminder.documentId)]);
+      const to = (client?.email || "").trim();
+      if (!client || !to.includes("@")) throw new ApiError("لا يوجد بريد إلكتروني مسجل لهذا العميل. أضفه من ملف العميل.");
+      try {
+        await sendMail({ to, ...renderReminderEmail({ clientName: client.name, documentTitle: document?.title || "مستند", message: reminder.message, officeName: "مَسار — سعود أوبس" }) });
+      } catch (error) {
+        throw new ApiError(`تعذّر إرسال البريد: ${error instanceof Error ? error.message.slice(0, 200) : "خطأ غير معروف"}`, 502, "MAIL_FAILED");
+      }
+      const timestamp = nowIso();
+      await updateRecord("reminders", id, { status: "تم الإرسال", channel: "بريد", sentAt: timestamp, updatedAt: timestamp });
+      await createRecord<ActivityRecord>("activities", { clientId: reminder.clientId, taskId: null, actor, event: "إرسال تنبيه للعميل", detail: `تم إرسال تنبيه التجديد بالبريد إلى ${to}.`, createdAt: timestamp });
+      return Response.json({ ok: true, sentTo: to });
+    }
+
     if (action === "scan_alerts") {
       requireRole(user, "owner");
       const [documentRows, clientRows, taskRows, memberRows, reminderRows] = await Promise.all([listRecords<DocumentRecord>("documents"), listRecords<ClientRecord>("clients"), listRecords<TaskRecord>("tasks"), listRecords<TeamRecord>("team_members"), listRecords<ReminderRecord>("reminders")]);
@@ -518,6 +541,8 @@ export async function POST(request: Request) {
     // إجراءات وحدة الرصد النظامي والامتثال
     const complianceResult = await handleComplianceAction(action, payload, user);
     if (complianceResult) return Response.json(complianceResult);
+    const monitoringResult = await handleMonitoringAction(action, payload, user);
+    if (monitoringResult) return Response.json(monitoringResult);
 
     throw new ApiError("الإجراء غير معروف.");
   } catch (error) {

@@ -3154,3 +3154,37 @@ button:disabled {
   .steps-list > label small { grid-column: 2; }
   .trace-table td:nth-child(2) { display: none; }
 }
+
+/* ── التسليم بالبريد والرصد الآلي ───────────────────────── */
+.integration-action { margin-top: 12px; }
+
+.auto-extraction-note { display: flex; gap: 11px; margin-top: 16px; padding: 13px 15px; background: var(--gold-100); border: 1px solid #ecdcb9; border-radius: 12px; }
+.auto-extraction-note > span { display: grid; place-items: center; flex-shrink: 0; width: 30px; height: 30px; color: #fff; font-size: 12px; font-weight: 800; background: var(--gold-600); border-radius: 9px; }
+.auto-extraction-note strong { display: block; color: #5d4520; font-size: 12px; }
+.auto-extraction-note p { margin: 4px 0 0; color: #70542a; font-size: 11px; line-height: 1.7; }
+.auto-extraction-note ul { margin: 6px 0 0; padding-right: 18px; color: #8a5a17; font-size: 11px; line-height: 1.7; }
+
+.review-form { display: grid; gap: 12px; margin-top: 14px; padding: 16px; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 12px; }
+.review-form .detail-actions { margin-top: 2px; }
+
+.monitoring-card { margin-top: 16px; }
+.monitoring-toolbar { display: flex; flex-wrap: wrap; gap: 9px; padding: 14px 20px; border-bottom: 1px solid #edf1f1; }
+.monitoring-form { display: grid; gap: 12px; padding: 16px 20px; background: var(--surface-soft); border-bottom: 1px solid #edf1f1; }
+.source-list { padding: 4px 20px 14px; }
+.source-row { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 11px; padding: 12px 0; border-bottom: 1px solid #edf1f1; }
+.source-row:last-child { border-bottom: 0; }
+.source-row.inactive { opacity: 0.6; }
+.source-row > div:not(.source-actions) { min-width: 0; }
+.source-row strong { display: block; font-size: 13px; }
+.source-row p,
+.source-row small { display: block; margin: 3px 0 0; overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.source-row small { font-size: 10px; }
+.source-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 7px; }
+.source-actions .outline-button { min-height: 32px; padding: 5px 11px; font-size: 11px; }
+
+@media (max-width: 720px) {
+  .source-row { grid-template-columns: 36px minmax(0, 1fr); }
+  .source-actions { grid-column: 1 / -1; justify-content: flex-start; }
+  .monitoring-form,
+  .review-form { grid-template-columns: 1fr; }
+}

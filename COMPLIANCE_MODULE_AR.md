@@ -1,7 +1,7 @@
 # وحدة «الرصد النظامي والامتثال» — نسخة Firebase
 
 **المشروع:** `saud-ops-masar` (App Hosting — europe-west4)
-**الحالة:** المرحلة 1 كاملة + التنسيق والمجدول اليومي — البناء والاختبارات والفحص النوعي كلها خضراء
+**الحالة:** المرحلة 1 كاملة + البريد + مكتبة الرصد الآلي + المجدول — البناء والاختبارات والفحص النوعي كلها خضراء
 
 ---
 
@@ -166,16 +166,121 @@ firebase deploy --only firestore:indexes
 
 ## 7. ما أُنجز بعد المرحلة 1
 
-- **تنسيق شاشة «الرصد النظامي»**: كل الأصناف التي كانت ناقصة صارت معرَّفة في
-  `app/globals.css` (قسم «الرصد النظامي والامتثال» في آخر الملف)، مع تجاوب للجوال.
-  قائمة القرارات مقيّدة بالصنف `compliance-section` فلا تمسّ شاشة العملاء.
-- **مجدول حقيقي عند 05:00**: نقطة جديدة `POST /api/cron/compliance-tick` تستدعي
-  `runComplianceTick` نفسها، محمية بسرّ مشترك `CRON_SECRET`. التشغيل عند فتح المالك
-  للنظام باقٍ كما هو، والتشغيلان معًا لا يكرران تنبيهًا ولا خطة.
+- **تنسيق شاشة «الرصد النظامي»** في `app/globals.css`، مع تجاوب للجوال.
+- **التسليم بالبريد** (SMTP — أي مزوّد). واتساب لاحقًا.
+- **مكتبة الرصد الآلي** `lib/monitoring/` بمصادر قابلة للتبديل، ومراقبة صحة المصدر،
+  واستخلاص مقيَّد بمخطط مغلق لا يتجاوز بوابة الاعتماد البشري.
+- **مجدول حقيقي** عبر `POST /api/cron/compliance-tick`.
 
-### تفعيل المجدول (مرة واحدة)
+```
+npm run lint  ✓
+npm run build ✓
+npm test      ✓   58 اختبارًا (35 للامتثال + 23 للبريد والرصد الآلي)
+```
 
-1. أنشئ السرّ في App Hosting (يُحفظ في Cloud Secret Manager):
+### 7.1 البريد
+
+**ما يُرسل:**
+
+| ماذا | لمن | كيف |
+|------|-----|-----|
+| تنبيهات الامتثال (المستوى 2 فما فوق) | المالك والموظف المسند حسب سلم التصعيد | تلقائيًا — رسالة **ملخّص واحدة** لكل مستقبِل في كل تشغيل، الأخطر أولًا |
+| تنبيه تجديد مستند | العميل (بريده في ملف العميل) | يدويًا — زر «بريد ✉» بجانب «واتساب» في مركز التنبيهات |
+| رسالة تجربة | المالك نفسه | زر «إرسال رسالة تجربة» في «الربط والإعدادات» |
+
+**ضمانات:**
+- الصمت الليلي محترم: التنبيه المؤجل حتى 07:00 لا يخرج قبلها.
+- لا إرسال مكرر: كل تنبيه يُحجز داخل معاملة («قيد الإرسال») قبل إرساله.
+- الفشل يُعاد حتى 3 محاولات، ثم يبقى «فشل الإرسال» ظاهرًا مع سبب الخطأ.
+- تنبيهات العملاء **لا تُرسل آليًا** — تبقى بقرار المالك كما في واتساب.
+
+**الإعداد** (App Hosting ← متغيرات البيئة):
+
+| المتغير | مثال | ملاحظة |
+|---------|------|--------|
+| `SMTP_HOST` | `smtp.gmail.com` | |
+| `SMTP_PORT` | `587` | `465` مع `SMTP_SECURE=true` |
+| `SMTP_USER` | `office@example.com` | |
+| `SMTP_PASS` | — | **سرّ** في Secret Manager، لا في الملف |
+| `MAIL_FROM` | `مَسار <office@example.com>` | اختياري، الافتراضي `SMTP_USER` |
+| `MAIL_REPLY_TO` | | اختياري |
+| `APP_URL` | رابط App Hosting | اختياري، لزر «فتح مَسار» داخل الرسالة |
+
+```bash
+firebase apphosting:secrets:set smtp-pass --project saud-ops-masar
+```
+
+ثم في `apphosting.yaml`:
+
+```yaml
+  - variable: SMTP_HOST
+    value: smtp.gmail.com
+    availability: [RUNTIME]
+  - variable: SMTP_PORT
+    value: "587"
+    availability: [RUNTIME]
+  - variable: SMTP_USER
+    value: office@example.com
+    availability: [RUNTIME]
+  - variable: SMTP_PASS
+    secret: smtp-pass
+    availability: [RUNTIME]
+```
+
+> **Gmail / Google Workspace:** فعّل التحقق بخطوتين ثم أنشئ «كلمة مرور تطبيق» واستخدمها في `SMTP_PASS`.
+> **Hotmail / Outlook الشخصي:** مايكروسوفت قيّدت الدخول بكلمة المرور عبر SMTP للحسابات الشخصية وقد لا يعمل،
+> فالأنسب بريد Gmail أو Workspace أو مزوّد إرسال (Brevo، SendGrid، Zoho) — كلها تعمل بالإعداد نفسه.
+> بدون هذه المتغيرات يبقى البريد معطّلًا ولا يتغير شيء في النظام.
+
+### 7.2 الرصد الآلي
+
+```
+lib/monitoring/types.ts        الأنواع: المصدر، العنصر الخام، المرشّح، الصحة
+lib/monitoring/adapters.ts     المحوّلات: RSS/Atom و JSON Feed
+lib/monitoring/extract.ts      الصلة والاستخلاص بالقواعد (حتمي وقابل للشرح)
+lib/monitoring/schema.ts       المخطط المغلق + التحقق من روابط المصادر
+lib/monitoring/health.ts       صحة المصدر: سليم / متعثر / متوقف
+lib/monitoring/fingerprint.ts  بصمة العنصر لمنع التكرار
+app/api/data/monitoring.ts     الجلب وFirestore والإجراءات
+tests/monitoring.test.mjs      الاختبارات
+```
+
+**المسار:** مصدر ← جلب (https فقط، 15 ثانية، 2 ميجابايت) ← محوّل ← بصمة (يُتجاهل المعروف)
+← فلتر الصلة ← استخلاص ← `validateCandidate` ← قرار بحالة **`pending_review`**.
+
+**بوابة الاعتماد البشري:**
+- المخطط المغلق ينسخ الحقول المسموحة فقط، ولا يملك حقل حالة — فلا يستطيع أي مستخلِص (قواعد اليوم أو نموذج لغوي لاحقًا) أن يعتمد قرارًا.
+- لا يُخمَّن تاريخ النفاذ: إن لم يُحسم يبقى فارغًا مع تحذير، و**الاعتماد مرفوض بلا تاريخ نفاذ** (لكل القرارات، يدوية أو آلية).
+- التاريخ الهجري يُنبَّه عليه ولا يُحوَّل آليًا.
+- شاشة القرار تعرض «مُستخلص آليًا · الثقة X%» والتحذيرات، وزر «مراجعة واعتماد» يفتح نموذجًا لتصحيح العنوان والتاريخ والنسبة واختيار المنشآت قبل الاعتماد.
+
+**صحة المصدر:** فشل واحد ⇒ متعثر، 3 متتالية ⇒ متوقف. ونجاح بلا عناصر 7 مرات متتالية ⇒ متعثر
+(غالبًا تغيّر الرابط أو هيكل الصفحة) — المصدر الصامت لا يُعرض «سليمًا».
+
+**أول فحص لمصدر جديد:** يُسجَّل كل ما فيه كمرئي، ولا يُقترح إلا ما نُشر خلال آخر 30 يومًا — لا سيل مقترحات.
+
+**المجموعات:** `regulatory_sources` (رقمي)، `regulatory_source_items` (`{sourceId}__{بصمة}` — منع التكرار).
+
+**اختيار القناة لاحقًا:** من «الرصد النظامي» ← «مصادر الرصد الآلي» ← «＋ مصدر» أضف أي رابط RSS أو JSON Feed.
+لقناة رسمية بشكل آخر (واجهة برمجية لجهة، أو صفحة HTML بعينها): نوع جديد في `SourceKind` ومحوّل
+في `adapters.ts` يعيد `RawItem[]` — ولا يتغير شيء آخر. وكذلك المستخلِص: أي دالة بتوقيع `Extractor`
+تمر حتمًا عبر `validateCandidate`.
+
+**الإجراءات الجديدة:** `save_regulatory_source`، `delete_regulatory_source`، `run_regulatory_monitor`،
+`deliver_compliance_alerts`، `send_test_email`، `email_reminder` — كلها للمالك فقط.
+
+### 7.3 المجدول
+
+النقطة `POST /api/cron/compliance-tick?job=…` محمية بسرّ `CRON_SECRET`:
+
+| `job` | ماذا | متى |
+|-------|------|-----|
+| `all` (افتراضي) | رصد المصادر ← التقويم اليومي ← تسليم البريد | 05:00 |
+| `deliver` | تسليم التنبيهات المستحقة بالبريد | كل ساعة 07:00–21:00 (لتسليم المؤجل حتى الصباح) |
+| `monitor` | فحص المصادر فقط | اختياري |
+| `tick` | التقويم اليومي فقط | اختياري |
+
+1. أنشئ السرّ:
 
    ```bash
    firebase apphosting:secrets:set cron-secret --project saud-ops-masar
@@ -190,31 +295,36 @@ firebase deploy --only firestore:indexes
          - RUNTIME
    ```
 
-   > لا تُضِف هذا السطر قبل إنشاء السرّ — النشر يفشل إن كان السرّ غير موجود.
+   > لا تُضِف سطر السرّ قبل إنشائه — النشر يفشل إن كان غير موجود.
    > وبدون `CRON_SECRET` تردّ النقطة بـ 503 ولا تفعل شيئًا.
 
-3. أنشئ مهمة Cloud Scheduler (استبدل الرابط برابط App Hosting والسرّ بقيمته):
+3. أنشئ مهمتي Cloud Scheduler (استبدل الرابط والسرّ):
 
    ```bash
-   gcloud scheduler jobs create http masar-compliance-tick \
+   gcloud scheduler jobs create http masar-compliance-daily \
      --project saud-ops-masar --location europe-west1 \
      --schedule "0 5 * * *" --time-zone "Asia/Riyadh" \
-     --uri "https://<رابط-App-Hosting>/api/cron/compliance-tick" \
-     --http-method POST \
-     --headers "Authorization=Bearer <قيمة-السرّ>"
+     --uri "https://<رابط-App-Hosting>/api/cron/compliance-tick?job=all" \
+     --http-method POST --headers "Authorization=Bearer <قيمة-السرّ>"
+
+   gcloud scheduler jobs create http masar-compliance-deliver \
+     --project saud-ops-masar --location europe-west1 \
+     --schedule "0 7-21 * * *" --time-zone "Asia/Riyadh" \
+     --uri "https://<رابط-App-Hosting>/api/cron/compliance-tick?job=deliver" \
+     --http-method POST --headers "Authorization=Bearer <قيمة-السرّ>"
    ```
 
-   للتجربة فورًا: `gcloud scheduler jobs run masar-compliance-tick --location europe-west1`.
-   الرد يحمل ملخص الفحص (`scanned`, `alertsCreated`, `plansCreated`, …) ويظهر أيضًا في سجلات App Hosting.
+   للتجربة فورًا: `gcloud scheduler jobs run masar-compliance-daily --location europe-west1`.
+   الرد يحمل ملخص كل مهمة، ويظهر أيضًا في سجلات App Hosting.
+
+بدون المجدول يبقى كل شيء يعمل عند فتح المالك للنظام: الفحص اليومي ثم تسليم البريد المستحق.
 
 ## 8. ما تبقّى
 
-- **قناة إرسال فعلية** لـ `compliance_alerts` (بريد أو واتساب) — تُخزَّن الآن وتُعرض ولا تُرسَل خارجيًا.
-  تحتاج قرارًا منكم بالمزوّد (WhatsApp Business API، أو SendGrid/Gmail للبريد) وبيانات اعتماده.
-- **قراءة المجموعات كاملة**: `loadAll()` القائم و`listRecords` يقرآن المجموعات بالكامل.
+- **واتساب** عبر WhatsApp Business API — بعد توفّر حساب Meta ورقم معتمد. التسليم بُني بحيث تُضاف القناة بجانب البريد.
+- **اختيار مصادر الرصد الرسمية** — المكتبة جاهزة؛ يبقى تحديد القنوات وإضافتها من الشاشة.
+- **قراءة المجموعات كاملة**: `loadAll()` و`listRecords` يقرآن المجموعات بالكامل.
   يعمل جيدًا عند عشرات المنشآت، ويحتاج إعادة نظر عند المئات.
-- **المرحلة 3 (الرصد الآلي)**: محوّلان للبداية مع مراقبة صحة المصدر، واستخلاص مُقيَّد
-  بمخطط لا يتجاوز بوابة الاعتماد البشري أبدًا.
 
 ---
 
