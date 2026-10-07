@@ -20,9 +20,18 @@ import {
   updateRecord,
 } from "../../../lib/firebase-admin";
 import { ApiError, requireRole, type CurrentUser } from "../../../lib/server-auth";
+import { appUrl, isMailConfigured, sendMail } from "../../../lib/mailer";
 
 import { assessImpact, impactId } from "../../../lib/compliance/assessment.ts";
-import { addDays, riyadhDate, remainingLabelAr } from "../../../lib/compliance/dates.ts";
+import { addDays, riyadhDate, riyadhStamp, remainingLabelAr } from "../../../lib/compliance/dates.ts";
+import {
+  ALERT_STATUS,
+  MAX_DELIVERY_ATTEMPTS,
+  PENDING_ALERT_STATUSES,
+  groupByRecipient,
+  isDeliverable,
+  renderAlertDigest,
+} from "../../../lib/compliance/delivery.ts";
 import { planEscalation, stepFor } from "../../../lib/compliance/escalation.ts";
 import { isSnapshotStale } from "../../../lib/compliance/gap.ts";
 import {
@@ -87,9 +96,13 @@ export type RegulatoryUpdateRecord = {
   version: number;
   previousEffectiveDate: string | null;
   statusReason: string | null;
-  extractionMethod: "ai" | "manual";
+  extractionMethod: "ai" | "manual" | "auto";
   extractionConfidence: number | null;
   extractionWarnings: string[];
+  // الرصد الآلي: من أي مصدر وأي عنصر جاء المرشّح
+  sourceId?: number | null;
+  sourceItemId?: string | null;
+  publishedAt?: string | null;
   createdByEmail: string;
   reviewedByEmail: string | null;
   reviewedAt: string | null;
@@ -158,6 +171,11 @@ export type ComplianceAlertRecord = {
   sentAt: string | null;
   readAt: string | null;
   createdAt: string;
+  // التسليم بالبريد
+  attempts?: number;
+  claimedAt?: string | null;
+  lastError?: string | null;
+  deliveredVia?: string | null;
 };
 
 export type ComplianceTemplateRecord = ComplianceTemplate & { id: number; active: boolean };
@@ -250,7 +268,7 @@ export async function complianceSnapshot(user: CurrentUser) {
   if (user.role === "client") {
     return {
       regulatoryUpdates: [], regulatoryImpacts: [], complianceProfiles: [],
-      workforceSnapshots: [], complianceSteps: [], complianceAlerts: [],
+      workforceSnapshots: [], complianceSteps: [], complianceAlerts: [], mailConfigured: false,
     };
   }
 
@@ -283,6 +301,7 @@ export async function complianceSnapshot(user: CurrentUser) {
     workforceSnapshots: latestPerClient(snapshots),
     complianceSteps: steps.filter((step) => visibleImpacts.has(step.impactId)).sort((a, b) => a.stepOrder - b.stepOrder),
     complianceAlerts: [...alerts].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 60),
+    mailConfigured: isMailConfigured(),
   };
 }
 
@@ -315,6 +334,8 @@ const COMPLIANCE_ACTIONS = new Set([
   "complete_compliance_step",
   "mark_compliance_alert_sent",
   "compliance_tick",
+  "deliver_compliance_alerts",
+  "send_test_email",
 ]);
 
 export function isComplianceAction(action: string) {
@@ -429,6 +450,9 @@ export async function handleComplianceAction(
     if (!["approve", "reject"].includes(decision)) throw new ApiError("حدّد الاعتماد أو الرفض.");
     const next: UpdateStatus = decision === "approve" ? "approved" : "rejected";
     assertTransition(update.status, next);
+    if (next === "approved" && !update.effectiveDate) {
+      throw new ApiError("حدّد تاريخ النفاذ قبل الاعتماد — بدونه لا عدّ تنازلي ولا تصعيد.");
+    }
 
     // فصل المهام: لا يعتمد المنشئ ما أنشأه ما دام هناك مراجع آخر
     let selfApproved = false;
@@ -639,7 +663,32 @@ export async function handleComplianceAction(
   // ── 11. التقويم اليومي ───────────────────────────────────────
   if (action === "compliance_tick") {
     requireRole(user, "owner");
-    return { ok: true, ...(await runComplianceTick({ today: clean(payload.today) || riyadhDate(), now: new Date() })) };
+    const now = new Date();
+    const tick = await runComplianceTick({ today: clean(payload.today) || riyadhDate(now), now });
+    const delivery = await deliverComplianceAlerts({ now });
+    return { ok: true, ...tick, emailsSent: delivery.emailsSent, delivery };
+  }
+
+  // ── 12. تسليم التنبيهات المستحقة بالبريد ─────────────────────
+  if (action === "deliver_compliance_alerts") {
+    requireRole(user, "owner");
+    return { ok: true, ...(await deliverComplianceAlerts({ now: new Date() })) };
+  }
+
+  // ── 13. رسالة تجربة للتحقق من إعداد SMTP ─────────────────────
+  if (action === "send_test_email") {
+    requireRole(user, "owner");
+    if (!isMailConfigured()) throw new ApiError("البريد غير مفعّل: أكمل إعدادات SMTP في App Hosting أولًا.", 400, "MAIL_DISABLED");
+    const content = renderAlertDigest([{
+      id: "test", level: 2, recipientEmail: user.email, channels: ["email"], status: ALERT_STATUS.ready,
+      scheduledFor: riyadhDate(), title: "رسالة تجربة من مَسار", message: "إذا وصلتك هذه الرسالة فإعداد البريد يعمل، وستصلك تنبيهات الامتثال تلقائيًا.",
+    }], appUrl());
+    try {
+      await sendMail({ to: user.email, ...content });
+    } catch (error) {
+      throw new ApiError(`تعذّر الإرسال: ${mailErrorText(error)}`, 502, "MAIL_FAILED");
+    }
+    return { ok: true, sentTo: user.email };
   }
 
   return null;
@@ -1209,4 +1258,83 @@ async function ensureRefreshTask(clientId: number, clientName: string, today: st
     createdAt: nowIso(),
     updatedAt: nowIso(),
   });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// التسليم بالبريد
+// ═══════════════════════════════════════════════════════════════
+
+export type DeliverySummary = {
+  enabled: boolean;
+  due: number;
+  emailsSent: number;
+  alertsDelivered: number;
+  failed: number;
+  errors: string[];
+};
+
+function mailErrorText(error: unknown) {
+  const text = error instanceof Error ? error.message : String(error);
+  return text.slice(0, 300);
+}
+
+/**
+ * يرسل التنبيهات المستحقة: رسالة ملخّص واحدة لكل مستقبِل.
+ * كل تنبيه يُحجز داخل معاملة (قيد الإرسال) قبل الإرسال، فلا يرسله تشغيلان متزامنان
+ * (المجدول والمتصفح) مرتين.
+ */
+export async function deliverComplianceAlerts(options: { now: Date }): Promise<DeliverySummary> {
+  const summary: DeliverySummary = { enabled: isMailConfigured(), due: 0, emailsSent: 0, alertsDelivered: 0, failed: 0, errors: [] };
+  if (!summary.enabled) return summary;
+
+  const nowStamp = riyadhStamp(options.now);
+  const pending = await queryDocs<ComplianceAlertRecord>(COL.alerts, "status", "in", PENDING_ALERT_STATUSES);
+  const due = pending.filter((alert) => isDeliverable(alert, nowStamp, options.now));
+  summary.due = due.length;
+  if (!due.length) return summary;
+
+  const claimed: ComplianceAlertRecord[] = [];
+  for (const alert of due) {
+    const ref = adminDb.collection(COL.alerts).doc(alert.id);
+    const won = await adminDb.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(ref);
+      if (!snapshot.exists) return false;
+      const current = snapshot.data() as ComplianceAlertRecord;
+      if (!isDeliverable(current, nowStamp, options.now)) return false;
+      transaction.update(ref, { status: ALERT_STATUS.sending, claimedAt: options.now.toISOString() });
+      return true;
+    });
+    if (won) claimed.push(alert);
+  }
+
+  for (const [recipient, alerts] of groupByRecipient(claimed)) {
+    try {
+      await sendMail({ to: recipient, ...renderAlertDigest(alerts, appUrl()) });
+      summary.emailsSent++;
+      const batch = adminDb.batch();
+      for (const alert of alerts) {
+        batch.update(adminDb.collection(COL.alerts).doc(alert.id), {
+          status: ALERT_STATUS.sent, sentAt: nowIso(), deliveredVia: "email", lastError: null, claimedAt: null,
+        });
+      }
+      await batch.commit();
+      summary.alertsDelivered += alerts.length;
+    } catch (error) {
+      const text = mailErrorText(error);
+      summary.failed += alerts.length;
+      summary.errors.push(`${recipient}: ${text}`);
+      const batch = adminDb.batch();
+      for (const alert of alerts) {
+        const attempts = (alert.attempts ?? 0) + 1;
+        batch.update(adminDb.collection(COL.alerts).doc(alert.id), {
+          status: ALERT_STATUS.failed, attempts, lastError: text, claimedAt: null,
+        });
+      }
+      await batch.commit();
+      if (alerts.some((alert) => (alert.attempts ?? 0) + 1 >= MAX_DELIVERY_ATTEMPTS)) {
+        console.error("compliance alert delivery gave up", recipient, text);
+      }
+    }
+  }
+  return summary;
 }

@@ -37,16 +37,18 @@ type ClientRequirement = { id: number; requestId: number; clientId: number; type
 type RequestTask = { id: number; requestId: number; taskId: number; createdAt: string };
 type StoredFile = { id: number; clientId: number; requestId: number | null; requirementId: number | null; documentId: number | null; label: string; fileName: string; contentType: string; fileSize: number; visibility: string; uploadedBy: string; createdAt: string };
 type AppUser = { id: number; email: string; fullName: string; role: AppRole; clientId: number | null; active: boolean; createdAt: string; updatedAt: string };
-type RegulatoryUpdateRow = { id: number; code: string; referenceNumber: string | null; title: string; summary: string; authority: string; categories: string[]; announcementDate: string | null; effectiveDate: string | null; correctionDeadline: string | null; sourceUrl: string | null; officialDocUrl: string | null; applicability: { logic: string; rules: Array<Record<string, unknown>> } | null; measure: { type: string; targetValue: number | null; unit: string } | null; requiredActions: Array<{ code: string; label: string }>; status: string; version: number; previousEffectiveDate: string | null; statusReason: string | null; createdByEmail: string; reviewedByEmail: string | null; reviewedAt: string | null; createdAt: string; updatedAt: string };
+type RegulatoryUpdateRow = { id: number; code: string; referenceNumber: string | null; title: string; summary: string; authority: string; categories: string[]; announcementDate: string | null; effectiveDate: string | null; correctionDeadline: string | null; sourceUrl: string | null; officialDocUrl: string | null; applicability: { logic: string; rules: Array<Record<string, unknown>> } | null; measure: { type: string; targetValue: number | null; unit: string } | null; requiredActions: Array<{ code: string; label: string }>; status: string; version: number; previousEffectiveDate: string | null; statusReason: string | null; extractionMethod?: string; extractionConfidence?: number | null; extractionWarnings?: string[]; sourceId?: number | null; publishedAt?: string | null; manualClientIds?: number[]; createdByEmail: string; reviewedByEmail: string | null; reviewedAt: string | null; createdAt: string; updatedAt: string };
 type MatchTraceRow = { rule: string; ruleAr: string; value: unknown; passed: boolean | null; unknown?: boolean };
 type ImpactGapRow = { currentValue: number | null; currentValueAsOf: string | null; requiredValue: number | null; estimatedHires: number | null; stale: boolean };
 type RegulatoryImpactRow = { id: string; updateId: number; clientId: number; effectiveDate: string | null; applicable: boolean | null; matchTrace: MatchTraceRow[]; gap: ImpactGapRow | null; risk: string; state: string; isOverdue: boolean; daysRemaining: number | null; internalDeadline: string | null; escalationLevel: number; taskId: number | null; assessedAt: string };
 type ComplianceProfileRow = { id: number; clientId: number; isicCode: string | null; activityLabel: string | null; sector: string | null; cityCode: string | null; mhrsdEstablishmentId: string | null; nitaqatBand: string | null; completeness: number; missingFields: string[]; lastVerifiedAt: string | null };
 type WorkforceSnapshotRow = { id: number; clientId: number; asOf: string; source: string; totalEmployees: number; saudis: number; nonSaudis: number; saudizationRate: number; capturedBy: string };
 type ComplianceStepRow = { id: string; impactId: string; taskId: number | null; stepOrder: number; title: string; dueDate: string; status: string; completedAt: string | null };
-type ComplianceAlertRow = { id: string; impactId: string; level: number; title: string; message: string; status: string; scheduledFor: string; sentAt: string | null; createdAt: string };
+type ComplianceAlertRow = { id: string; impactId: string; level: number; title: string; message: string; status: string; scheduledFor: string; sentAt: string | null; createdAt: string; lastError?: string | null };
+type SourceHealthRow = { status: string; consecutiveFailures: number; emptyRuns: number; lastCheckedAt: string | null; lastSuccessAt: string | null; lastError: string | null; lastItemCount: number };
+type RegulatorySourceRow = { id: number; name: string; authority: string; kind: string; url: string; active: boolean; keywords: string[]; health: SourceHealthRow; itemsSeen: number; candidatesCreated: number; createdAt: string };
 type ActionResult = { request?: ClientRequest; document?: DocumentRecord; [key: string]: unknown };
-type Snapshot = { currentUser: CurrentUser; clients: Client[]; documents: DocumentRecord[]; tasks: TaskRecord[]; reminders: Reminder[]; team: TeamMember[]; access: AccessReference[]; activities: Activity[]; requests: ClientRequest[]; requirements: ClientRequirement[]; requestTasks: RequestTask[]; files: StoredFile[]; users: AppUser[]; regulatoryUpdates: RegulatoryUpdateRow[]; regulatoryImpacts: RegulatoryImpactRow[]; complianceProfiles: ComplianceProfileRow[]; workforceSnapshots: WorkforceSnapshotRow[]; complianceSteps: ComplianceStepRow[]; complianceAlerts: ComplianceAlertRow[]; generatedAt: string };
+type Snapshot = { currentUser: CurrentUser; clients: Client[]; documents: DocumentRecord[]; tasks: TaskRecord[]; reminders: Reminder[]; team: TeamMember[]; access: AccessReference[]; activities: Activity[]; requests: ClientRequest[]; requirements: ClientRequirement[]; requestTasks: RequestTask[]; files: StoredFile[]; users: AppUser[]; regulatoryUpdates: RegulatoryUpdateRow[]; regulatoryImpacts: RegulatoryImpactRow[]; complianceProfiles: ComplianceProfileRow[]; workforceSnapshots: WorkforceSnapshotRow[]; complianceSteps: ComplianceStepRow[]; complianceAlerts: ComplianceAlertRow[]; mailConfigured?: boolean; regulatorySources?: RegulatorySourceRow[]; generatedAt: string };
 
 const navItems: Array<{ id: Section; label: string; icon: string }> = [
   { id: "dashboard", label: "الرئيسية", icon: "⌂" },
@@ -573,7 +575,7 @@ export default function Home() {
         {section === "alerts" && <section className="page-section">
           <PageHeader eyebrow="متابعة آلية" title="مركز التنبيهات" description="يُنشئ النظام هذه التنبيهات من تواريخ انتهاء المستندات، دون اعتماد على ذاكرة الموظف." action={<button className="primary-action" disabled={saving} onClick={async () => { await postAction("scan_alerts", {}, "اكتمل فحص تواريخ الانتهاء وإنشاء المهام اللازمة."); }}>{saving ? "جارٍ الفحص…" : "↻ فحص الآن"}</button>} />
           <div className="alert-summary"><div><span className="alert-dot danger" /><strong>{counts.urgent}</strong><p>منتهي أو خلال 7 أيام</p></div><div><span className="alert-dot warning" /><strong>{counts.soon}</strong><p>خلال 30 يومًا</p></div><div><span className="alert-dot info" /><strong>{data.reminders.filter((item) => item.status === "جاهز للإرسال").length}</strong><p>رسائل جاهزة للإرسال</p></div><div><span className="alert-dot success" /><strong>{data.reminders.filter((item) => item.status === "تم الإرسال").length}</strong><p>تم إرسالها</p></div></div>
-          <article className="alerts-list">{data.reminders.map((reminder) => { const client = clientsById.get(reminder.clientId); const document = docsById.get(reminder.documentId); const meta = expiryMeta(reminder.expiryDate); return <div className="alert-item" key={reminder.id}><div className={`alert-symbol ${meta.tone}`}>!</div><div className="alert-main"><div><strong>{document?.title || "مستند"}</strong><Badge tone={reminder.status === "تم الإرسال" ? "success" : meta.tone}>{reminder.status}</Badge></div><p>{client?.name} · {meta.label}</p><blockquote>{reminder.message}</blockquote></div><div className="alert-actions"><button className="whatsapp-button" onClick={() => openWhatsApp(reminder)}>واتساب ↗</button>{reminder.status !== "تم الإرسال" && <button className="outline-button" disabled={saving} onClick={async () => { await postAction("mark_reminder_sent", { id: reminder.id }, "تم تسجيل إرسال التنبيه."); }}>تسجيل الإرسال</button>}</div></div>; })}{!data.reminders.length && <EmptyState icon="✓" title="لا توجد تنبيهات" text="جميع المستندات بعيدة عن تواريخ الانتهاء المحددة." />}</article>
+          <article className="alerts-list">{data.reminders.map((reminder) => { const client = clientsById.get(reminder.clientId); const document = docsById.get(reminder.documentId); const meta = expiryMeta(reminder.expiryDate); return <div className="alert-item" key={reminder.id}><div className={`alert-symbol ${meta.tone}`}>!</div><div className="alert-main"><div><strong>{document?.title || "مستند"}</strong><Badge tone={reminder.status === "تم الإرسال" ? "success" : meta.tone}>{reminder.status}</Badge></div><p>{client?.name} · {meta.label}</p><blockquote>{reminder.message}</blockquote></div><div className="alert-actions"><button className="whatsapp-button" onClick={() => openWhatsApp(reminder)}>واتساب ↗</button>{data.mailConfigured && client?.email && reminder.status !== "تم الإرسال" && <button className="outline-button" disabled={saving} onClick={async () => { try { await postAction("email_reminder", { id: reminder.id }, `أُرسل التنبيه بالبريد إلى ${client.email}.`); } catch { /* الخطأ ظاهر في الإشعار */ } }}>بريد ✉</button>}{reminder.status !== "تم الإرسال" && <button className="outline-button" disabled={saving} onClick={async () => { await postAction("mark_reminder_sent", { id: reminder.id }, "تم تسجيل إرسال التنبيه."); }}>تسجيل الإرسال</button>}</div></div>; })}{!data.reminders.length && <EmptyState icon="✓" title="لا توجد تنبيهات" text="جميع المستندات بعيدة عن تواريخ الانتهاء المحددة." />}</article>
         </section>}
 
         {section === "compliance" && isOwner && <ComplianceCenter
@@ -597,7 +599,7 @@ export default function Home() {
 
         {section === "settings" && <section className="page-section">
           <PageHeader eyebrow="جاهزية التكامل" title="الربط والإعدادات" description="حالة القنوات التي يعتمد عليها التشغيل الآن وما يلزم لإكمال الربط الحقيقي." />
-          <div className="integration-grid"><IntegrationCard icon="م" title="أرشيف مَسار" state="مفعّل" tone="success" text="ترفع الملفات مباشرة داخل التطبيق مع صلاحيات تنزيل بحسب العميل والمهمة، ويمكن إبقاء روابط Drive الحالية." detail={`${data.files.length} ملفات محفوظة داخل التطبيق`} /><IntegrationCard icon="و" title="WhatsApp Business API" state="بانتظار الربط" tone="warning" text="الرسائل تُجهز تلقائيًا ويمكن فتحها في واتساب. الإرسال التلقائي يحتاج حساب Meta ورقمًا معتمدًا." detail="لا توجد مفاتيح ربط محفوظة" /><IntegrationCard icon="خ" title="خزنة بيانات الدخول" state="مرجع آمن" tone="info" text="يحفظ التطبيق اسم المنصة واسم المستخدم ومرجع الخزنة فقط، ولا يحفظ كلمات المرور." detail={`${data.access.length} مراجع منصات`} /><IntegrationCard icon="د" title="بوابة الدفع" state="رابط دفع جاهز" tone="info" text="يمكن للمالك إرسال مبلغ ورابط دفع داخل الطلب، ويؤكد العميل السداد من بوابته." detail="الربط الآلي مع المزود يُضاف لاحقًا" /></div>
+          <div className="integration-grid"><IntegrationCard icon="م" title="أرشيف مَسار" state="مفعّل" tone="success" text="ترفع الملفات مباشرة داخل التطبيق مع صلاحيات تنزيل بحسب العميل والمهمة، ويمكن إبقاء روابط Drive الحالية." detail={`${data.files.length} ملفات محفوظة داخل التطبيق`} /><IntegrationCard icon="✉" title="البريد الإلكتروني (SMTP)" state={data.mailConfigured ? "مفعّل" : "بانتظار الإعداد"} tone={data.mailConfigured ? "success" : "warning"} text="تُرسل تنبيهات الامتثال تلقائيًا للمالك والموظف المسند، ويمكن إرسال تنبيه التجديد للعميل ببريده بدل واتساب." detail={data.mailConfigured ? "إعدادات SMTP مضبوطة في App Hosting" : "أضف SMTP_HOST وSMTP_USER وSMTP_PASS في App Hosting"} action={isOwner && data.mailConfigured ? <button className="outline-button" disabled={saving} onClick={async () => { try { await postAction("send_test_email", {}, `أُرسلت رسالة تجربة إلى ${data.currentUser.email}.`); } catch { /* الخطأ ظاهر في الإشعار */ } }}>إرسال رسالة تجربة</button> : undefined} /><IntegrationCard icon="و" title="WhatsApp Business API" state="بانتظار الربط" tone="warning" text="الرسائل تُجهز تلقائيًا ويمكن فتحها في واتساب. الإرسال التلقائي يحتاج حساب Meta ورقمًا معتمدًا." detail="لا توجد مفاتيح ربط محفوظة" /><IntegrationCard icon="خ" title="خزنة بيانات الدخول" state="مرجع آمن" tone="info" text="يحفظ التطبيق اسم المنصة واسم المستخدم ومرجع الخزنة فقط، ولا يحفظ كلمات المرور." detail={`${data.access.length} مراجع منصات`} /><IntegrationCard icon="د" title="بوابة الدفع" state="رابط دفع جاهز" tone="info" text="يمكن للمالك إرسال مبلغ ورابط دفع داخل الطلب، ويؤكد العميل السداد من بوابته." detail="الربط الآلي مع المزود يُضاف لاحقًا" /></div>
           <article className="automation-card"><header><div><span>⚡</span><div><h3>قواعد الأتمتة المفعلة</h3><p>هذه القواعد تعمل عند فتح النظام أو الضغط على «فحص الآن».</p></div></div><Badge tone="success">مفعلة</Badge></header><div className="automation-rules"><div><b>60 يومًا</b><span>إنشاء تنبيه جاهز للعميل</span></div><i>←</i><div><b>30 يومًا</b><span>إنشاء مهمة وإسنادها تلقائيًا</span></div><i>←</i><div><b>7 أيام</b><span>رفع الأولوية إلى عاجلة</span></div><i>←</i><div><b>بعد الإنجاز</b><span>تحديث المستند والتاريخ الجديد</span></div></div></article>
         </section>}
       </div>
@@ -654,6 +656,8 @@ export default function Home() {
 function ComplianceCenter({ data, saving, selectedUpdateId, onSelectUpdate, onAction, onNewUpdate, onWorkforce, onTask }: { data: Snapshot; saving: boolean; selectedUpdateId: number | null; onSelectUpdate: (id: number) => void; onAction: (action: string, payload: Record<string, unknown>, message: string) => Promise<ActionResult>; onNewUpdate: () => void; onWorkforce: (clientId: number) => void; onTask: (taskId: number) => void }) {
   const [openTrace, setOpenTrace] = useState<string | null>(null);
   const [postponing, setPostponing] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+  const sourcesById = useMemo(() => new Map((data.regulatorySources || []).map((source) => [source.id, source])), [data.regulatorySources]);
 
   const updates = data.regulatoryUpdates;
   const impacts = data.regulatoryImpacts;
@@ -686,13 +690,13 @@ function ComplianceCenter({ data, saving, selectedUpdateId, onSelectUpdate, onAc
 
   const selectedSteps = selected ? data.complianceSteps.filter((step) => selectedImpacts.some((impact) => impact.id === step.impactId)) : [];
 
-  return <section className="page-section">
+  return <section className="page-section compliance-section">
     <PageHeader
       eyebrow="من الخبر إلى التزام متتبَّع"
       title="الرصد النظامي والامتثال"
       description="كل قرار نظامي يتحول إلى التزام مرتبط بمنشأة، بعدّ تنازلي وتصعيد متدرج وخطة تصحيح داخل نظام المهام نفسه."
       action={<div className="header-actions">
-        <button className="outline-button" disabled={saving} onClick={async () => { const result = await onAction("compliance_tick", {}, "اكتمل فحص الالتزامات النظامية."); const created = Number(result?.plansCreated || 0); const alerts = Number(result?.alertsCreated || 0); if (created || alerts) console.info("compliance tick", result); }}>↻ فحص الآن</button>
+        <button className="outline-button" disabled={saving} onClick={async () => { const result = await onAction("compliance_tick", {}, "اكتمل فحص الالتزامات النظامية وتسليم البريد المستحق."); const created = Number(result?.plansCreated || 0); const alerts = Number(result?.alertsCreated || 0); if (created || alerts) console.info("compliance tick", result); }}>↻ فحص الآن</button>
         <button className="primary-action" onClick={onNewUpdate}>＋ قرار نظامي</button>
       </div>}
     />
@@ -725,11 +729,11 @@ function ComplianceCenter({ data, saving, selectedUpdateId, onSelectUpdate, onAc
             const related = impacts.filter((item) => item.updateId === update.id);
             const affected = related.filter((item) => item.applicable === true).length;
             const days = update.effectiveDate ? daysUntil(update.effectiveDate) : null;
-            return <button key={update.id} className={selected?.id === update.id ? "active" : ""} onClick={() => { onSelectUpdate(update.id); setOpenTrace(null); setPostponing(false); }}>
+            return <button key={update.id} className={selected?.id === update.id ? "active" : ""} onClick={() => { onSelectUpdate(update.id); setOpenTrace(null); setPostponing(false); setReviewing(false); }}>
               <span className="mini-code">{update.code.slice(-3)}</span>
               <div>
                 <strong>{update.title}</strong>
-                <p>{authorityLabels[update.authority] || update.authority} · {affected} منشأة متأثرة</p>
+                <p>{update.extractionMethod === "auto" ? "رصد آلي · " : ""}{authorityLabels[update.authority] || update.authority} · {affected} منشأة متأثرة</p>
               </div>
               <div className="list-meta">
                 <Badge tone={update.status === "approved" || update.status === "in_effect" ? "success" : update.status === "pending_review" ? "warning" : update.status === "postponed" ? "info" : "muted"}>{updateStatusLabels[update.status] || update.status}</Badge>
@@ -769,8 +773,8 @@ function ComplianceCenter({ data, saving, selectedUpdateId, onSelectUpdate, onAc
 
           <div className="detail-actions">
             {selected.status === "pending_review" && <>
-              <button className="primary-action" disabled={saving} onClick={() => onAction("review_regulatory_update", { id: selected.id, decision: "approve" }, "اعتُمد القرار وبدأ تقييم المنشآت.")}>اعتماد القرار</button>
-              <button className="outline-button" disabled={saving} onClick={() => onAction("review_regulatory_update", { id: selected.id, decision: "reject" }, "رُفض القرار.")}>رفض</button>
+              <button className="primary-action" disabled={saving} onClick={() => setReviewing((value) => !value)}>مراجعة واعتماد</button>
+              <button className="outline-button" disabled={saving} onClick={() => onAction("review_regulatory_update", { id: selected.id, decision: "reject" }, "رُفض القرار.").catch(() => undefined)}>رفض</button>
             </>}
             {["approved", "in_effect"].includes(selected.status) && <>
               <button className="outline-button" disabled={saving} onClick={() => onAction("assess_regulatory_impacts", { id: selected.id }, "أُعيد تقييم المنشآت.")}>إعادة التقييم</button>
@@ -778,6 +782,46 @@ function ComplianceCenter({ data, saving, selectedUpdateId, onSelectUpdate, onAc
               <button className="outline-button" disabled={saving} onClick={() => onAction("change_regulatory_status", { id: selected.id, status: "cancelled" }, "أُلغي القرار وأُوقف التصعيد.")}>إلغاء</button>
             </>}
           </div>
+
+          {selected.extractionMethod === "auto" && <div className="auto-extraction-note">
+            <span>آ</span>
+            <div>
+              <strong>مُستخلص آليًا من {sourcesById.get(selected.sourceId ?? 0)?.name || "مصدر رصد"}{typeof selected.extractionConfidence === "number" ? ` · الثقة ${Math.round(selected.extractionConfidence * 100)}%` : ""}</strong>
+              <p>اقتراح فقط — لا يدخل العدّ التنازلي ولا يصل لأي منشأة قبل مراجعتك واعتمادك. قارنه بالنص الرسمي أولًا.</p>
+              {(selected.extractionWarnings || []).length > 0 && <ul>{(selected.extractionWarnings || []).map((warning, index) => <li key={index}>{warning}</li>)}</ul>}
+            </div>
+          </div>}
+
+          {reviewing && selected.status === "pending_review" && <form key={`review-${selected.id}`} className="review-form form-grid" onSubmit={async (event) => {
+            event.preventDefault();
+            const form = new FormData(event.currentTarget);
+            const effectiveDate = String(form.get("effectiveDate") || "");
+            const correctionDeadline = String(form.get("correctionDeadline") || "");
+            const targetRaw = String(form.get("targetValue") || "").trim();
+            const manualClientIds = form.getAll("clientIds").map(Number);
+            try {
+              await onAction("update_regulatory_update", {
+                id: selected.id, effectiveDate, correctionDeadline: correctionDeadline || null,
+                title: String(form.get("title") || ""), summary: String(form.get("summary") || ""),
+                ...(targetRaw !== "" ? { measure: { type: "saudization_rate", targetValue: Number(targetRaw), unit: "percent", measuredBy: "QIWA", internalEstimateAllowed: true } } : {}),
+                reason: "مراجعة قبل الاعتماد",
+              }, "حُفظت المراجعة.");
+              await onAction("review_regulatory_update", { id: selected.id, decision: "approve", manualClientIds, notes: String(form.get("notes") || "") }, "اعتُمد القرار وبدأ تقييم المنشآت.");
+              setReviewing(false);
+            } catch { /* الخطأ ظاهر في الإشعار */ }
+          }}>
+            <Field label="العنوان" required wide><input name="title" defaultValue={selected.title} required /></Field>
+            <Field label="الملخص" wide><textarea name="summary" rows={3} defaultValue={selected.summary} /></Field>
+            <Field label="تاريخ النفاذ" required><input type="date" name="effectiveDate" defaultValue={selected.effectiveDate || ""} required /></Field>
+            <Field label="نهاية فترة التصحيح"><input type="date" name="correctionDeadline" defaultValue={selected.correctionDeadline || ""} /></Field>
+            <Field label="نسبة التوطين المستهدفة (%)"><input type="number" min="0" max="100" step="0.01" name="targetValue" defaultValue={selected.measure?.targetValue ?? ""} /></Field>
+            <Field label="ملاحظات المراجعة"><input name="notes" placeholder="مثال: طابقته مع نص القرار المنشور" /></Field>
+            {!selected.applicability && <Field label="المنشآت المتأثرة" wide><div className="checkbox-grid">{data.clients.map((client) => <label key={client.id}><input type="checkbox" name="clientIds" value={client.id} defaultChecked={(selected.manualClientIds || []).includes(client.id)} /><span>{client.name}</span></label>)}</div></Field>}
+            <div className="detail-actions field-wide">
+              <button className="primary-action" disabled={saving}>حفظ واعتماد</button>
+              <button className="outline-button" type="button" onClick={() => setReviewing(false)}>إلغاء</button>
+            </div>
+          </form>}
 
           {postponing && <form className="inline-form" onSubmit={async (event) => {
             event.preventDefault();
@@ -877,6 +921,8 @@ function ComplianceCenter({ data, saving, selectedUpdateId, onSelectUpdate, onAc
         </article>}
       </div>
     </div>
+
+    <MonitoringSources sources={data.regulatorySources || []} saving={saving} onAction={onAction} />
   </section>;
 }
 
@@ -1107,6 +1153,59 @@ function AccessManagement({ data, saving, onAdd, onToggle }: { data: Snapshot; s
   return <section className="page-section"><PageHeader eyebrow="دخول مستقل لكل شخص" title="الدخول والصلاحيات" description="أضف البريد وحدد الدور؛ وسيطبّق النظام الصلاحيات على الخادم تلقائيًا." action={<button className="primary-action" onClick={onAdd}>＋ حساب دخول</button>} /><div className="access-summary"><div><strong>{data.users.filter((item) => item.role === "owner").length}</strong><span>مالك</span></div><div><strong>{data.users.filter((item) => item.role === "employee").length}</strong><span>موظف</span></div><div><strong>{data.users.filter((item) => item.role === "client").length}</strong><span>عميل</span></div></div><article className="accounts-table"><div className="accounts-head"><span>الحساب</span><span>الدور</span><span>النطاق</span><span>الحالة</span><span>الإجراء</span></div>{data.users.map((account) => <div className="account-row" key={account.id}><span><Avatar name={account.fullName} size="small" /><span><b>{account.fullName}</b><small dir="ltr">{account.email}</small></span></span><span><Badge tone={account.role === "owner" ? "info" : account.role === "client" ? "warning" : "success"}>{roleLabel[account.role]}</Badge></span><span>{account.role === "owner" ? "جميع البيانات" : account.role === "employee" ? "مهامه والعملاء المرتبطون" : clientMap.get(account.clientId || 0)?.name || "غير مرتبط"}</span><span><Badge tone={account.active ? "success" : "muted"}>{account.active ? "نشط" : "موقوف"}</Badge></span><span><button className="outline-button" disabled={saving || account.role === "owner"} onClick={() => onToggle(account)}>{account.active ? "إيقاف" : "تفعيل"}</button></span></div>)}</article><div className="permission-matrix"><div><h3>ما الذي يراه كل حساب؟</h3><p>الإخفاء بصري ومن الخادم، فلا يمكن للحساب الوصول إلى بيانات خارج نطاقه حتى عبر الرابط المباشر.</p></div><ul><li><b>المالك:</b> العملاء، الفريق، الطلبات، التسعير، التنبيهات والصلاحيات.</li><li><b>الموظف:</b> المهام المسندة وملفات العملاء اللازمة للتنفيذ.</li><li><b>العميل:</b> منشأته ومستنداته وطلباته وما يطلبه الفريق منه.</li></ul></div></section>;
 }
 
-function IntegrationCard({ icon, title, state, tone, text, detail }: { icon: string; title: string; state: string; tone: string; text: string; detail: string }) {
-  return <article className="integration-card"><header><span>{icon}</span><Badge tone={tone}>{state}</Badge></header><h3>{title}</h3><p>{text}</p><small>{detail}</small></article>;
+const healthTone: Record<string, string> = { healthy: "success", degraded: "warning", down: "danger", unknown: "muted" };
+const healthLabels: Record<string, string> = { healthy: "سليم", degraded: "متعثر", down: "متوقف", unknown: "لم يُفحص بعد" };
+
+function MonitoringSources({ sources, saving, onAction }: { sources: RegulatorySourceRow[]; saving: boolean; onAction: (action: string, payload: Record<string, unknown>, message: string) => Promise<ActionResult | undefined> }) {
+  const [adding, setAdding] = useState(false);
+  const run = async (id?: number) => {
+    try {
+      const result = await onAction("run_regulatory_monitor", id ? { id } : {}, "اكتمل فحص مصادر الرصد.");
+      const created = Number(result?.candidatesCreated || 0);
+      if (created) console.info("regulatory monitor", result);
+    } catch { /* الخطأ ظاهر في الإشعار */ }
+  };
+  return <article className="dashboard-card monitoring-card">
+    <header>
+      <div><h2>مصادر الرصد الآلي</h2><p>يقرأ النظام هذه المصادر يوميًا ويقترح قرارات «بانتظار المراجعة» — لا شيء يُعتمد دون مراجعتك.</p></div>
+    </header>
+    <div className="monitoring-toolbar">
+      <button className="primary-action" onClick={() => setAdding((value) => !value)}>＋ مصدر</button>
+      {sources.length > 0 && <button className="outline-button" disabled={saving} onClick={() => run()}>↻ فحص المصادر</button>}
+    </div>
+    {adding && <form className="form-grid monitoring-form" onSubmit={async (event) => {
+      event.preventDefault();
+      const values = Object.fromEntries(new FormData(event.currentTarget).entries());
+      try { await onAction("save_regulatory_source", values, "أُضيف المصدر. سيُفحص في التشغيل القادم أو بزر «فحص المصادر»."); setAdding(false); } catch { /* الخطأ ظاهر في الإشعار */ }
+    }}>
+      <Field label="اسم المصدر" required><input name="name" required placeholder="مثال: أخبار وزارة الموارد البشرية" /></Field>
+      <Field label="الجهة" required><select name="authority" defaultValue="MHRSD">{Object.entries(authorityLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
+      <Field label="نوع المصدر" required><select name="kind" defaultValue="rss"><option value="rss">RSS / Atom</option><option value="json_feed">JSON Feed</option></select></Field>
+      <Field label="الرابط (https)" required><input type="url" name="url" required placeholder="https://…/rss" /></Field>
+      <Field label="كلمات إضافية للصلة (مفصولة بفواصل)" wide><input name="keywords" placeholder="مثال: المنشآت الصغيرة، قطاع التجزئة" /></Field>
+      <div className="form-note wide"><span>⌾</span><p>الكلمات الافتراضية تغطي التوطين ونطاقات وحماية الأجور والتأمينات ورخص العمل وأجير والعقود والسلامة المهنية. في أول فحص يُسجَّل كل ما في المصدر، ولا يُقترح إلا ما نُشر خلال آخر 30 يومًا.</p></div>
+      <div className="detail-actions field-wide"><button className="primary-action" disabled={saving}>حفظ المصدر</button><button className="outline-button" type="button" onClick={() => setAdding(false)}>إلغاء</button></div>
+    </form>}
+    <div className="source-list">
+      {sources.map((source) => <div key={source.id} className={`source-row ${source.active ? "" : "inactive"}`}>
+        <span className={`mini-icon ${healthTone[source.health?.status] || "muted"}`}>{source.kind === "rss" ? "R" : "J"}</span>
+        <div>
+          <strong>{source.name}</strong>
+          <p>{authorityLabels[source.authority] || source.authority} · <bdi>{source.url}</bdi></p>
+          <small>{source.health?.lastCheckedAt ? `آخر فحص ${formatTime(source.health.lastCheckedAt)}` : "لم يُفحص بعد"} · {source.itemsSeen || 0} عنصرًا · {source.candidatesCreated || 0} مقترحًا{source.health?.lastError ? ` · ${source.health.lastError}` : ""}</small>
+        </div>
+        <div className="source-actions">
+          <Badge tone={source.active ? healthTone[source.health?.status] || "muted" : "muted"}>{source.active ? healthLabels[source.health?.status] || "—" : "موقوف"}</Badge>
+          <button className="outline-button" disabled={saving} onClick={() => run(source.id)}>فحص</button>
+          <button className="outline-button" disabled={saving} onClick={() => onAction("save_regulatory_source", { ...source, keywords: source.keywords, active: !source.active }, source.active ? "أُوقف المصدر." : "فُعّل المصدر.").catch(() => undefined)}>{source.active ? "إيقاف" : "تفعيل"}</button>
+          <button className="outline-button" disabled={saving} onClick={() => { if (window.confirm(`حذف المصدر «${source.name}»؟ القرارات المقترحة منه تبقى.`)) onAction("delete_regulatory_source", { id: source.id }, "حُذف المصدر.").catch(() => undefined); }}>حذف</button>
+        </div>
+      </div>)}
+      {!sources.length && !adding && <p className="muted-copy">لم يُضَف أي مصدر بعد. أضف رابط RSS أو JSON Feed لجهة رسمية أو مصدر إخباري موثوق، وستُقترح القرارات ذات الصلة تلقائيًا.</p>}
+    </div>
+  </article>;
+}
+
+function IntegrationCard({ icon, title, state, tone, text, detail, action }: { icon: string; title: string; state: string; tone: string; text: string; detail: string; action?: ReactNode }) {
+  return <article className="integration-card"><header><span>{icon}</span><Badge tone={tone}>{state}</Badge></header><h3>{title}</h3><p>{text}</p><small>{detail}</small>{action && <div className="integration-action">{action}</div>}</article>;
 }

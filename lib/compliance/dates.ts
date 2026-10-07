@@ -18,6 +18,12 @@ export function riyadhHour(instant: Date = new Date()): number {
   return shifted.getUTCHours();
 }
 
+/** طابع الرياض بصيغة "YYYY-MM-DD HH:mm" — يُقارن نصيًا بحقل scheduledFor في التنبيهات */
+export function riyadhStamp(instant: Date = new Date()): string {
+  const shifted = new Date(instant.getTime() + RIYADH_UTC_OFFSET_HOURS * 3_600_000);
+  return `${shifted.toISOString().slice(0, 10)} ${shifted.toISOString().slice(11, 16)}`;
+}
+
 /** يحوّل YYYY-MM-DD إلى عدد أيام مطلق (منتصف ليل الرياض بالـ UTC) */
 function dayNumber(isoDate: string): number {
   const [y, m, d] = isoDate.split("-").map(Number);
